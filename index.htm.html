@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>市政府道路巡檢系統｜AI 行人穿越道硬體安全評估終端</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Orbitron:wght@600;800&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+  <style>
+    /* ==========================================================================
+       CSS 變數系統：賽博龐克霓虹藍紫（深色預設 / 淺色高對比切換）
+       ========================================================================== */
+    :root {
+      --font-display: 'Orbitron', 'Noto Sans TC', system-ui, -apple-system, sans-serif;
+      --font-mono: 'Share Tech Mono', 'Noto Sans TC', monospace;
+      --font-sans: 'Noto Sans TC', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+      /* 深色賽博龐克預設 */
+      --bg-body: #070812;
+      --bg-sidebar: #0c0f22;
+      --bg-card: #11152e;
+      --bg-card-alt: #171c3d;
+      --bg-input: #090c1c;
+      --border-color: #28336e;
+      --border-glow: #00e5ff;
+
+      --text-primary: #eef3ff;
+      --text-secondary: #9ba8d6;
+      --text-muted: #6875a8;
+
+      --neon-cyan: #00e5ff;
+      --neon-purple: #b347ff;
+      --neon-blue: #3d7eff;
+      --accent-gradient: linear-gradient(135deg, #00e5ff 0%, #7b2cbf 100%);
+      --grid-line: rgba(0, 229, 255, 0.05);
+
+      /* 固定風險標籤色彩（不可更動色相，確保白字高對比） */
+      --risk-low: #2e7d32;
+      --risk-mid: #ef6c00;
+      --risk-high: #c62828;
+      --risk-na: #616161;
+    }
+
+    [data-theme="light"] {
+      --bg-body: #eef2fa;
+      --bg-sidebar: #ffffff;
+      --bg-card: #ffffff;
+      --bg-card-alt: #f4f7fe;
+      --bg-input: #e6ecf8;
+      --border-color: #c2cde8;
+      --border-glow: #4f46e5;
+
+      --text-primary: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #64748b;
+
+      --neon-cyan: #0284c7;
+      --neon-purple: #7e22ce;
+      --neon-blue: #2563eb;
+      --accent-gradient: linear-gradient(135deg, #0284c7 0%, #7e22ce 100%);
+      --grid-line: rgba(37, 99, 235, 0.05);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: auto; /* 遵循無動態效果選項 */
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background-color: var(--bg-body);
+      background-image:
+        linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+        linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+      background-size: 32px 32px;
+      color: var(--text-primary);
+      line-height: 1.65;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ==========================================================================
+       左側固定選單（桌面版固定於左側，手機版轉為頂部巡檢導覽列）
+       ========================================================================== */
+    .sidebar {
+      width: 270px;
+      flex-shrink: 0;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 1.5rem 1.25rem;
+      z-index: 100;
+      overflow-y: auto;
+    }
+
+    .brand-box {
+      border-left: 3px solid var(--neon-cyan);
+      padding-left: 0.85rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .brand-code {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      letter-spacing: 0.12em;
+      color: var(--neon-cyan);
+      text-transform: uppercase;
+    }
+
+    .brand-title {
+      font-size: 1.15rem;
+      font-weight: 900;
+      letter-spacing: 0.04em;
+      color: var(--text-primary);
+      margin-top: 0.2rem;
+    }
+
+    .nav-links {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .nav-links a {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.55rem 0.75rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      border: 1px solid transparent;
+      border-left: 2px solid transparent;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus {
+      color: var(--text-primary);
+      background-color: var(--bg-card-alt);
+      border-color: var(--border-color);
+      border-left-color: var(--neon-cyan);
+    }
+
+    .nav-index {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--neon-purple);
+    }
+
+    .sidebar-footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 1rem;
+      margin-top: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .theme-btn {
+      width: 100%;
+      padding: 0.55rem 0.85rem;
+      background-color: var(--bg-card-alt);
+      color: var(--text-primary);
+      border: 1px solid var(--border-glow);
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .theme-btn:hover {
+      background-color: var(--bg-input);
+    }
+
+    .sys-meta {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* ==========================================================================
+       主內容區域
+       ========================================================================== */
+    .main-content {
+      margin-left: 270px;
+      flex: 1;
+      max-width: 1200px;
+      padding: 2rem 2.5rem 4rem;
+    }
+
+    section {
+      margin-bottom: 2.75rem;
+      scroll-margin-top: 1.5rem;
+    }
+
+    /* 首頁大標（市政巡檢終端抬頭） */
+    .hero-panel {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-top: 3px solid var(--neon-cyan);
+      padding: 2rem;
+      position: relative;
+    }
+
+    .hero-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: var(--neon-cyan);
+      border: 1px solid var(--neon-cyan);
+      padding: 0.15rem 0.6rem;
+      margin-bottom: 0.85rem;
+      letter-spacing: 0.08em;
+    }
+
+    .hero-panel h1 {
+      font-size: 1.95rem;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      margin-bottom: 0.75rem;
+      color: var(--text-primary);
+    }
+
+    .hero-desc {
+      color: var(--text-secondary);
+      font-size: 1.02rem;
+      max-width: 780px;
+      margin-bottom: 1.5rem;
+    }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: var(--accent-gradient);
+      color: #ffffff;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 0.95rem;
+      padding: 0.75rem 1.4rem;
+      border: 1px solid var(--neon-cyan);
+      letter-spacing: 0.04em;
+    }
+
+    /* 區塊標題 */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.6rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .section-code {
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      color: var(--neon-cyan);
+      background-color: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      padding: 0.15rem 0.5rem;
+    }
+
+    .section-header h2 {
+      font-size: 1.35rem;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+    }
+
+    /* 卡片與格線 */
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+    }
+
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      padding: 1.25rem;
+    }
+
+    .card h3 {
+      font-size: 1.02rem;
+      font-weight: 700;
+      color: var(--neon-cyan);
+      margin-bottom: 0.5rem;
+    }
+
+    .card p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+    }
+
+    /* 圖例列 */
+    .legend-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 1.25rem;
+      background-color: var(--bg-card-alt);
+      border: 1px solid var(--border-color);
+      padding: 0.85rem 1.1rem;
+      margin-top: 1rem;
+      font-size: 0.88rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .swatch-box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid #00FF00;
+      background-color: rgba(0, 255, 0, 0.15);
+      display: inline-block;
+    }
+
+    .swatch-badge {
+      padding: 0.1rem 0.5rem;
+      color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      border-radius: 2px;
+    }
+
+    /* 資料表格 */
+    .table-wrap {
+      overflow-x: auto;
+      background-color: var
